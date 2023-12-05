@@ -63,9 +63,9 @@ if __name__ == '__main__':
 	print(torch.cuda.is_available())
 	if availbl:
 		device = f'cuda:{gpu}'
+		torch.cuda.set_device(device)
 	else:
 		device = 'cpu'
-	torch.cuda.set_device(gpu)
 
 	cf = {"model_pretrained": "bert-base-chinese",
 			"lr": 1e-3,
