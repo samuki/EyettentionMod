@@ -219,12 +219,8 @@ def load_label(sp_pos, cf, labelencoder, device):
 	label = sp_pos[:, 1:]*mask + sac_amp*~mask
 	label = torch.where(label>cf["max_sn_len"]-1, cf["max_sn_len"]-1, label).to('cpu').detach().numpy()
 	label = labelencoder.transform(label.reshape(-1)).reshape(label.shape[0], label.shape[1])
-	if device == 'cpu':
-		pad_mask = pad_mask.to('cpu').detach().numpy()
-	else:
-		label = torch.from_numpy(label).to(device)
+	label = torch.from_numpy(label).to(device)
 	return pad_mask, label
-
 
 def likelihood(pred, label, mask):
 	#test
