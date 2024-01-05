@@ -1,0 +1,21 @@
+# Submodule
+Eyettention
+
+# Feature norms
+feature_norm*
+
+# Cache
+__pycache__
+
+# Vscode
+.vscode
+
+# Local
+results_reader.py
+
+# Data
+Data
+
+# results
+results*
+evaluate*

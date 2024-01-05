@@ -32,12 +32,21 @@ def load_corpus(corpus, task=None):
 		#load word data, POS data, EM data
 		word_info_df, pos_info_df, eyemovement_df = load_bsc()
 		return word_info_df, pos_info_df, eyemovement_df
+
 	elif corpus == 'celer':
 		eyemovement_df = pd.read_csv('./Data/celer/data_v2.0/sent_fix.tsv', delimiter='\t')
 		eyemovement_df['CURRENT_FIX_INTEREST_AREA_LABEL'] = eyemovement_df.CURRENT_FIX_INTEREST_AREA_LABEL.replace('\t(.*)', '', regex=True)
 		word_info_df = pd.read_csv('./Data/celer/data_v2.0/sent_ia.tsv', delimiter='\t')
 		word_info_df['IA_LABEL'] = word_info_df.IA_LABEL.replace('\t(.*)', '', regex=True)
 		return word_info_df, None, eyemovement_df
+
+	elif corpus == 'meco':
+		import pyreadr
+		path = 'Data/meco/joint_fix_trimmed_l1.rda'
+		#path = 'Data/meco/joint_fix_trimmed_l2.rda'
+		meco_rda = pyreadr.read_r(path)
+		return meco_rda["joint.fix"]
+		
 
 def compute_BSC_word_length(sn_df):
 	word_len = sn_df.LEN.values
@@ -266,8 +275,6 @@ def prepare_scanpath(sp_dnn, sn_len, sp_human, cf):
 	sp_human_cut = [sp_human[i][:stop_indx[i]+1] for i in range(sp_human.shape[0])]
 	return sp_dnn_cut, sp_human_cut
 
-
-
 def celer_load_native_speaker():
 	sub_metadata_path = './Data/celer/metadata.tsv'
 	sub_infor = pd.read_csv(sub_metadata_path, delimiter='\t')
@@ -280,18 +287,21 @@ def compute_word_length_celer(arr):
 	arr[arr==0] = 1/(0+0.5)
 	arr[arr!=0] = 1/(arr[arr!=0])
 	return arr
+
 def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf):
 	"""
 	SN_token_embedding   <CLS>, bla, bla, <SEP>
 	SP_token_embedding       <CLS>, bla, bla, <SEP>
 	SP_ordinal_pos 0, bla, bla, max_sp_len
 	SP_fix_dur     0, bla, bla, 0
+	Concatenate: concatenate scanpaths and sentences for training
 	"""
 	SN_input_ids, SN_attention_mask, SN_WORD_len, WORD_ids_sn = [], [], [], []
 	SP_input_ids, SP_attention_mask, WORD_ids_sp = [], [], []
 	SP_ordinal_pos, SP_landing_pos, SP_fix_dur = [], [], []
 	sub_id_list =  []
 	for sn_id in tqdm(sn_list):
+     
 		#process sentence sequence
 		sn_df = eyemovement_df[eyemovement_df.sentenceid==sn_id]
 		#notice: Each sentence is recorded multiple times in file |word_info_df|.
@@ -413,6 +423,8 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 			mask_sp = sp_tokens['attention_mask']
 			#index start from 0, CLS -> 0 and SEP -> last index
 			word_ids_sp = sp_tokens.word_ids()
+   
+   
 			word_ids_sp = [val if val is not None else np.nan for val in word_ids_sp]
 			SP_input_ids.append(encoded_sp)
 			SP_attention_mask.append(mask_sp)
@@ -448,6 +460,209 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 
 	return data
 
+def _process_celer_merged(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf):
+	"""
+	SN_token_embedding   <CLS>, bla, bla, <SEP>
+	SP_token_embedding       <CLS>, bla, bla, <SEP>
+	SP_ordinal_pos 0, bla, bla, max_sp_len
+	SP_fix_dur     0, bla, bla, 0
+	Concatenate: concatenate scanpaths and sentences for training
+	"""
+	SN_input_ids, SN_attention_mask, SN_WORD_len, WORD_ids_sn = [], [], [], []
+	SP_input_ids, SP_attention_mask, WORD_ids_sp = [], [], []
+	SP_ordinal_pos, SP_landing_pos, SP_fix_dur = [], [], []
+	sub_id_list =  []
+	for org_sn_id in tqdm(sn_list):
+		# concatenate 1 to n sentences:
+		n_sn_samples = np.random.randint(0,5)
+		sn_sample_ids = np.random.randint(0,len(sn_list)-1, n_sn_samples).tolist()
+		sn_samples = [org_sn_id]
+		for sn_id in sn_sample_ids:
+			sn_samples.append(sn_list[sn_id])
+  
+		repeated_sp_ordinal_pos = []
+		repeated_sp_fix_dur = []
+		repeated_sp_landing_pos = []
+		sp_token = []
+		repeated_sn_string = ""
+		
+		for sn_id in sn_samples:
+			#process sentence sequence
+			sn_df = eyemovement_df[eyemovement_df.sentenceid==sn_id]
+			#notice: Each sentence is recorded multiple times in file |word_info_df|.
+			sn = word_info_df[word_info_df.sentenceid == sn_id]
+			sn = sn[sn['list']==sn.list.values.tolist()[0]]
+			#compute word length for each word
+			sn_word_len = compute_word_length_celer(sn.WORD_LEN.values)
+
+			sn_str = sn.sentence.iloc[-1]
+			#nessacery sanity check, when split sentence to words, the length of sentence should match the sentence length recorded in celer dataset
+			if sn_id in ['1987/w7_019/w7_019.295-3', '1987/w7_036/w7_036.147-43', '1987/w7_091/w7_091.360-6']:
+				#extra inverted commas at the end of the sentence
+				sn_str = sn_str[:-3] + sn_str[-1:]
+			if sn_id == '1987/w7_085/w7_085.200-18':
+				sn_str = sn_str[:43] + sn_str[44:]
+    
+    
+			curr_sn_len = len(sn_str.split())
+			repeated_sn_string += sn_str + " "
+			total_sn_len = len(repeated_sn_string.split())
+			ordinal_pos_offset = total_sn_len - curr_sn_len
+   
+			#process fixation sequence
+			for sub_id in reader_list:
+				sub_df = sn_df[sn_df.list==sub_id]
+				# remove fixations on non-words
+				sub_df = sub_df.loc[sub_df.CURRENT_FIX_INTEREST_AREA_LABEL != '.']
+				if len(sub_df) == 0:
+					#no scanpath data found for the subject
+					continue
+
+				#prepare decoder input and output
+				sp_word_pos, sp_fix_loc, sp_fix_dur = sub_df.CURRENT_FIX_INTEREST_AREA_ID.values, sub_df.CURRENT_FIX_NEAREST_INTEREST_AREA_DISTANCE.values, sub_df.CURRENT_FIX_DURATION.values
+
+				#dataset is noisy -> sanity check
+				# 1) check if recorded fixation duration are within reasonable limits
+				#Less than 50ms attempt to merge with neighbouring fixation if fixate is on the same word, otherwise delete
+				outlier_indx = np.where(sp_fix_dur<50)[0]
+				if outlier_indx.size>0:
+					for out_idx in range(len(outlier_indx)):
+						outlier_i = outlier_indx[out_idx]
+						merge_flag = False
+
+						#outliers are commonly found in the fixation of the last record and the first record, and are removed directly
+						if outlier_i == len(sp_fix_dur)-1 or outlier_i == 0:
+							merge_flag = True
+
+						else:
+							if outlier_i-1 >= 0 and merge_flag == False:
+								#try to merge with the left fixation
+								if sub_df.iloc[outlier_i].CURRENT_FIX_INTEREST_AREA_LABEL == sub_df.iloc[outlier_i-1].CURRENT_FIX_INTEREST_AREA_LABEL:
+									sp_fix_dur[outlier_i-1] = sp_fix_dur[outlier_i-1] + sp_fix_dur[outlier_i]
+									merge_flag = True
+
+							if outlier_i+1 < len(sp_fix_dur) and merge_flag == False:
+								#try to merge with the right fixation
+								if sub_df.iloc[outlier_i].CURRENT_FIX_INTEREST_AREA_LABEL == sub_df.iloc[outlier_i+1].CURRENT_FIX_INTEREST_AREA_LABEL:
+									sp_fix_dur[outlier_i+1] = sp_fix_dur[outlier_i+1] + sp_fix_dur[outlier_i]
+									merge_flag = True
+
+						sp_word_pos = np.delete(sp_word_pos, outlier_i)
+						sp_fix_loc = np.delete(sp_fix_loc, outlier_i)
+						sp_fix_dur = np.delete(sp_fix_dur, outlier_i)
+						sub_df.drop(sub_df.index[outlier_i], axis=0, inplace=True)
+						outlier_indx = outlier_indx-1
+
+				# 2) scanpath too long, remove outliers, speed up the inference
+				if len(sp_word_pos) > 50: # 72/10684
+					continue
+				# 3)scanpath too short for a normal length sentence
+				if len(sp_word_pos)<=1 and curr_sn_len>10:
+					continue
+
+				# 4) check landing position feature
+				#assign missing value to 'nan'
+				sp_fix_loc=np.where(sp_fix_loc=='.', np.nan, sp_fix_loc)
+				#convert string of number of float type
+				sp_fix_loc = [float(i) for i in sp_fix_loc]
+
+				#Outliers in calculated landing positions due to lack of valid AOI data, assign to 'nan'
+				if np.nanmax(sp_fix_loc)>35:
+					missing_idx = np.where(np.array(sp_fix_loc)>5)[0]
+					for miss in missing_idx:
+						if sub_df.iloc[miss].CURRENT_FIX_INTEREST_AREA_LEFT in ['NONE', 'BEFORE', 'AFTER', 'BOTH']:
+							sp_fix_loc[miss] = np.nan
+						else:
+							print('Landing position calculation error. Unknown cause, needs to be checked')
+
+				sp_ordinal_pos = sp_word_pos.astype(int)
+    
+				corrected_sp_ordinal_pos = [pos + ordinal_pos_offset for pos in sp_ordinal_pos]
+
+				repeated_sp_ordinal_pos.extend(corrected_sp_ordinal_pos)
+				repeated_sp_fix_dur.extend(sp_fix_dur)
+				repeated_sp_landing_pos.extend(sp_fix_loc)
+    
+				# Fix indices using [CLS]
+				local_sn_str = '[CLS]' + ' ' + sn_str + ' ' + '[SEP]'
+				local_sp_token = [local_sn_str.split()[int(i)] for i in sp_ordinal_pos]
+				sp_token.extend(local_sp_token)
+    
+		SP_ordinal_pos.append(repeated_sp_ordinal_pos)
+		SP_fix_dur.append(repeated_sp_fix_dur)
+		SP_landing_pos.append(repeated_sp_landing_pos)
+  
+		#tokenization and padding
+		tokenizer.padding_side = 'right'
+		repeated_sn_string = '[CLS]' + ' ' + sn_str + ' ' + '[SEP]'
+		#pre-tokenized input
+		tokens = tokenizer.encode_plus(repeated_sn_string.split(),
+										add_special_tokens = False,
+										truncation=False,
+										max_length = cf['max_sn_token'],
+										padding = 'max_length',
+										return_attention_mask=True,
+										is_split_into_words=True)
+		encoded_sn = tokens['input_ids']
+		mask_sn = tokens['attention_mask']
+		#use offset mapping to determine if two tokens are in the same word.
+		#index start from 0, CLS -> 0 and SEP -> last index
+		word_ids_sn = tokens.word_ids()
+		word_ids_sn = [val if val is not None else np.nan for val in word_ids_sn]
+
+		
+		sp_token_str = '[CLS]' + ' ' + ' '.join(sp_token) + ' ' + '[SEP]'
+
+		#tokenization and padding for scanpath, i.e. fixated word sequence
+		sp_tokens = tokenizer.encode_plus(sp_token_str.split(),
+										add_special_tokens = False,
+										truncation=False,
+										max_length = cf['max_sp_token'],
+										padding = 'max_length',
+										return_attention_mask=True,
+										is_split_into_words=True)
+		encoded_sp = sp_tokens['input_ids']
+		mask_sp = sp_tokens['attention_mask']
+		#index start from 0, CLS -> 0 and SEP -> last index
+		word_ids_sp = sp_tokens.word_ids()
+		word_ids_sp = [val if val is not None else np.nan for val in word_ids_sp]
+		SP_input_ids.append(encoded_sp)
+		SP_attention_mask.append(mask_sp)
+		WORD_ids_sp.append(word_ids_sp)
+
+		#sentence information
+		SN_input_ids.append(encoded_sn)
+		SN_attention_mask.append(mask_sn)
+		SN_WORD_len.append(sn_word_len)
+		WORD_ids_sn.append(word_ids_sn)
+		# Ignore subid for now 
+		#sub_id_list.append(int(sub_id))
+		sub_id_list.append(np.nan)
+
+	#padding for batch computation
+	SP_ordinal_pos = pad_seq(SP_ordinal_pos, max_len=(cf["max_sp_len"]), pad_value=cf["max_sn_len"])
+	SP_fix_dur = pad_seq(SP_fix_dur, max_len=(cf["max_sp_len"]), pad_value=0)
+	SP_landing_pos = pad_seq(SP_landing_pos, cf["max_sp_len"], pad_value=0, dtype=np.float32)
+	SN_WORD_len = pad_seq_with_nan(SN_WORD_len, cf["max_sn_len"], dtype=np.float32)
+
+	#assign type
+	SN_input_ids = np.asarray(SN_input_ids, dtype=np.int64)
+	SN_attention_mask = np.asarray(SN_attention_mask, dtype=np.float32)
+	SP_input_ids = np.asarray(SP_input_ids, dtype=np.int64)
+	SP_attention_mask = np.asarray(SP_attention_mask, dtype=np.float32)
+ 
+	sub_id_list = np.asarray(sub_id_list)
+	WORD_ids_sn = np.asarray(WORD_ids_sn)
+	WORD_ids_sp = np.asarray(WORD_ids_sp)
+
+	data = {"SN_input_ids": SN_input_ids, "SN_attention_mask": SN_attention_mask, "SN_WORD_len": SN_WORD_len, "WORD_ids_sn": WORD_ids_sn,
+	 		"SP_input_ids": SP_input_ids, "SP_attention_mask": SP_attention_mask, "WORD_ids_sp": WORD_ids_sp,
+			"SP_ordinal_pos": np.array(SP_ordinal_pos), "SP_landing_pos": np.array(SP_landing_pos), "SP_fix_dur": np.array(SP_fix_dur),
+			"sub_id": sub_id_list,
+			}
+
+	return data
+
 class celerdataset(Dataset):
 	"""Return celer dataset."""
 
@@ -456,7 +671,8 @@ class celerdataset(Dataset):
 		word_info_df, eyemovement_df, cf, reader_list, sn_list, tokenizer
 	):
 
-		self.data = _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
+		#self.data = _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
+		self.data = _process_celer_merged(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
 
 	def __len__(self):
 		return len(self.data["SN_input_ids"])
@@ -489,8 +705,6 @@ def one_hot_encode(arr, dim):
 		onehot_encoded[idx, value] = 1
 
 	return onehot_encoded
-
-
 
 def gradient_clipping(dnn_model, clip = 10):
 	torch.nn.utils.clip_grad_norm_(dnn_model.parameters(),clip)

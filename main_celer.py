@@ -47,13 +47,13 @@ if __name__ == '__main__':
 		'--max_pred_len',
 		help='if scanpath_gen_flag is True, you can determine the longest scanpath that you want to generate, which should depend on the sentence length',
 		type=int,
-		default=60
+		default=256
 	)
 	parser.add_argument(
 		'--gpu',
 		help='gpu index',
 		type=int,
-		default=6
+		default=0
 	)
 	args = parser.parse_args()
 	gpu = args.gpu
@@ -65,10 +65,10 @@ if __name__ == '__main__':
 	print(torch.cuda.is_available())
 	if availbl:
 		device = f'cuda:{gpu}'
+		torch.cuda.set_device(gpu)
 	else:
 		device = 'cpu'
 	print(device)
-	torch.cuda.set_device(gpu)
 
 	cf = {"model_pretrained": "bert-base-cased",
 			"lr": 1e-3,
@@ -78,10 +78,10 @@ if __name__ == '__main__':
 			"dataset": 'celer',
 			"atten_type": args.atten_type,
 			"batch_size": 256,
-			"max_sn_len": 24, #max number of words in a sentence, include start token and end token,
-			"max_sn_token": 35, #maximum number of tokens a sentence includes. include start token and end token,
-			"max_sp_len": 52, #max number of words in a scanpath, include start token and end token
-			"max_sp_token": 395, #maximum number of tokens a scanpath includes. include start token and end token
+			"max_sn_len": 256, #max number of words in a sentence, include start token and end token,
+			"max_sn_token": 256, #maximum number of tokens a sentence includes. include start token and end token,
+			"max_sp_len": 256, #max number of words in a scanpath, include start token and end token
+			"max_sp_token": 400, #maximum number of tokens a scanpath includes. include start token and end token
 			"norm_type": 'z-score',
 			"earlystop_patience": 20,
 			"max_pred_len":args.max_pred_len
@@ -144,11 +144,12 @@ if __name__ == '__main__':
 		#initialize tokenizer
 		tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
 		#Preparing batch data
+		dataset_val = celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, sn_list_val, tokenizer)
+		val_dataloaderr = DataLoader(dataset_val, batch_size = cf["batch_size"], shuffle = False, drop_last=True)
+		
 		dataset_train = celerdataset(word_info_df, eyemovement_df, cf, reader_list_train, sn_list_train, tokenizer)
 		train_dataloaderr = DataLoader(dataset_train, batch_size = cf["batch_size"], shuffle = True, drop_last=True)
 
-		dataset_val = celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, sn_list_val, tokenizer)
-		val_dataloaderr = DataLoader(dataset_val, batch_size = cf["batch_size"], shuffle = False, drop_last=True)
 
 		dataset_test = celerdataset(word_info_df, eyemovement_df, cf, reader_list_test, sn_list_test, tokenizer)
 		test_dataloaderr = DataLoader(dataset_test, batch_size = cf["batch_size"], shuffle = False, drop_last=False)
