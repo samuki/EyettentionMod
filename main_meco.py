@@ -17,6 +17,17 @@ import json
 import matplotlib.pyplot as plt
 import argparse
 
+
+def load_pretrained(model_path, cf, device, path_type='local'):
+	# Load model
+	dnn = Eyettention(cf)
+	if path_type == "url": 
+		dnn.load_state_dict(model_zoo.load_url(model_path, map_location=torch.device(device)))
+	else:
+		#dnn.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+		dnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)),  strict=False)
+	return dnn
+
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='run Eyettention on Meco dataset')
 	parser.add_argument(
@@ -53,8 +64,14 @@ if __name__ == '__main__':
 		'--gpu',
 		help='gpu index',
 		type=int,
-		default=6
+		default=0
 	)
+	parser.add_argument(
+			'--load_pretrained',
+			help='load pretrained model',
+			type=bool,
+			default=False
+			)
 	args = parser.parse_args()
 	gpu = args.gpu
 
@@ -77,7 +94,7 @@ if __name__ == '__main__':
 			"n_folds": 5,
 			"dataset": 'meco',
 			"atten_type": args.atten_type,
-			"batch_size": 256,
+			"batch_size": 32,
 			"max_sn_len": 256,
 			"max_sn_token": 400,
 			"max_sp_len": 512,
@@ -143,7 +160,12 @@ if __name__ == '__main__':
 		sn_word_len_mean, sn_word_len_std = calculate_mean_std(dataloader=train_dataloaderr, feat_key="sn_word_len")
 
 		# load model
-		dnn = Eyettention(cf)
+		if args.load_pretrained:
+			print("Loading pretrained")
+			dnn = load_pretrained(args.save_data_folder+"CELoss_meco_text_eyettention_local-g_newloss_fold0.pth", cf, device, path_type='local')
+		else:
+			print("Creating new model")
+			dnn = Eyettention(cf)
 
 		#training
 		episode = 0
@@ -273,7 +295,7 @@ if __name__ == '__main__':
 		#evaluation
 		dnn.eval()
 		res_llh=[]
-		dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,f'CELoss_CELER_{args.test_mode}_eyettention_{args.atten_type}_newloss_fold{fold_indx}.pth'), map_location='cpu'))
+		dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,f'CELoss_meco_{args.test_mode}_eyettention_{args.atten_type}_newloss_fold{fold_indx}.pth'), map_location='cpu'))
 		dnn.to(device)
 		batch_indx = 0
 		for batchh in test_dataloaderr:
