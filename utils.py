@@ -276,6 +276,7 @@ def load_label(sp_pos, cf, labelencoder, device):
 def likelihood(pred, label, mask):
 	#test
 	#res = F.nll_loss(torch.tensor(pred), torch.tensor(label))
+	mask = mask.cpu().numpy()
 	label = one_hot_encode(label, pred.shape[1])
 	res = np.sum(np.multiply(pred, label), axis=1)
 	res = np.sum(res * ~mask)/np.sum(~mask)

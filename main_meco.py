@@ -283,7 +283,7 @@ if __name__ == '__main__':
 
 			if np.mean(val_loss) < old_score:
 				# save model if val loss is smallest
-				torch.save(dnn.state_dict(), '{}/CELoss_CELER_{}_eyettention_{}_newloss_fold{}.pth'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx))
+				torch.save(dnn.state_dict(), '{}/CELoss_meco_{}_eyettention_{}_newloss_fold{}.pth'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx))
 				old_score= np.mean(val_loss)
 				print('\nsaved model state dict\n')
 				save_ep_couter = episode_i
@@ -355,7 +355,7 @@ if __name__ == '__main__':
 													 le=le,
 													 max_pred_len=cf['max_pred_len'])
 
-					sp_dnn, sp_human = prepare_scanpath(sp_dnn.detach().to('cpu').numpy(), sn_len, sp_pos_test, cf)
+					sp_dnn, sp_human = prepare_scanpath(sp_dnn[0].detach().to('cpu').numpy(), sn_len, sp_pos_test, cf)
 					sp_dnn_list.extend(sp_dnn)
 					sp_human_list.extend(sp_human)
 
@@ -378,5 +378,5 @@ if __name__ == '__main__':
 	if bool(args.scanpath_gen_flag) == True:
 		#save results
 		dic = {"sp_dnn": sp_dnn_list, "sp_human": sp_human_list}
-		with open(os.path.join(args.save_data_folder, f'CELER_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle'), 'wb') as handle:
+		with open(os.path.join(args.save_data_folder, f'meco_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle'), 'wb') as handle:
 			pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)
