@@ -2,20 +2,19 @@
 import numpy as np
 import pandas as pd
 import os
-import seaborn as sns
 from typing import Tuple
-from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizerFast, BertTokenizer, BertForTokenClassification
+from torch.utils.data import Dataset
 import torch
-import torch.nn.functional as F
-import seaborn as sns
-import matplotlib.pyplot as plt
 from tqdm import tqdm
-import json
-from collections import Counter
-import torch.nn as nn
 import re
 
+from model import Eyettention
+
+def load_pretrained_model(model_path, cf, device):
+	# Load model
+	dnn = Eyettention(cf)
+	dnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)),  strict=False)
+	return dnn
 
 def load_bsc() -> Tuple[pd.DataFrame, ...]:
 	"""

@@ -1,32 +1,19 @@
 import numpy as np
-import pandas as pd
 import os
 from utils import *
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import KFold
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.optim import Adam, RMSprop
+from torch.optim import Adam
 from transformers import BertTokenizerFast
 from model import Eyettention
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-from torch.nn.functional import cross_entropy, softmax
+from sklearn.preprocessing import LabelEncoder
 from collections import deque
 import pickle
-import json
-import matplotlib.pyplot as plt
 import argparse
 
-
-def load_pretrained(model_path, cf, device, path_type='local'):
-	# Load model
-	dnn = Eyettention(cf)
-	if path_type == "url": 
-		dnn.load_state_dict(model_zoo.load_url(model_path, map_location=torch.device(device)))
-	else:
-		#dnn.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-		dnn.load_state_dict(torch.load(model_path, map_location=torch.device(device)),  strict=False)
-	return dnn
+from utils import load_pretrained_model
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='run Eyettention on Meco dataset')
@@ -67,11 +54,18 @@ if __name__ == '__main__':
 		default=0
 	)
 	parser.add_argument(
-			'--load_pretrained',
-			help='load pretrained model',
-			type=bool,
-			default=False
-			)
+		'--load_pretrained',
+		help='load pretrained model',
+		type=bool,
+		default=False
+	)
+	parser.add_argument(
+		'--pretrained_model_path',
+		help='pretrained model path',
+		type=str,
+		default="results/meco/CELoss_meco_text_eyettention_local-g_newloss_fold4.pth"
+	)
+ 
 	args = parser.parse_args()
 	gpu = args.gpu
 
@@ -162,7 +156,7 @@ if __name__ == '__main__':
 		# load model
 		if args.load_pretrained:
 			print("Loading pretrained")
-			dnn = load_pretrained(args.save_data_folder+"CELoss_meco_text_eyettention_local-g_newloss_fold0.pth", cf, device, path_type='local')
+			dnn = load_pretrained_model(args.pretrained_model_path, cf, device)
 		else:
 			print("Creating new model")
 			dnn = Eyettention(cf)

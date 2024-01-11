@@ -17,6 +17,8 @@ import json
 import matplotlib.pyplot as plt
 import argparse
 
+from utils import load_pretrained_model
+
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='run Eyettention on CELER dataset')
 	parser.add_argument(
@@ -55,6 +57,20 @@ if __name__ == '__main__':
 		type=int,
 		default=0
 	)
+	parser.add_argument(
+		'--load_pretrained',
+		help='load pretrained model',
+		type=bool,
+		default=False
+	)
+	parser.add_argument(
+		'--pretrained_model_path',
+		help='pretrained model path',
+		type=str,
+		default="results/meco/CELoss_meco_text_eyettention_local-g_newloss_fold4.pth"
+	)
+	
+	
 	args = parser.parse_args()
 	gpu = args.gpu
 
@@ -70,22 +86,22 @@ if __name__ == '__main__':
 		device = 'cpu'
 	print(device)
 
-	cf = {"model_pretrained": "bert-base-cased",
+	cf = {"model_pretrained": "bert-base-multilingual-cased", # Multiling BERT
 			"lr": 1e-3,
 			"max_grad_norm": 10,
 			"n_epochs": 1000,
 			"n_folds": 5,
-			"dataset": 'celer',
+			"dataset": 'meco',
 			"atten_type": args.atten_type,
-			"batch_size": 256,
-			"max_sn_len": 256, #max number of words in a sentence, include start token and end token,
-			"max_sn_token": 256, #maximum number of tokens a sentence includes. include start token and end token,
-			"max_sp_len": 256, #max number of words in a scanpath, include start token and end token
-			"max_sp_token": 400, #maximum number of tokens a scanpath includes. include start token and end token
+			"batch_size": 32,
+			"max_sn_len": 256,
+			"max_sn_token": 400,
+			"max_sp_len": 512,
+			"max_sp_token": 512,
 			"norm_type": 'z-score',
 			"earlystop_patience": 20,
 			"max_pred_len":args.max_pred_len
-			}
+	}
 
 	#Encode the label into interger categories, setting the exclusive category 'cf["max_sn_len"]-1' as the end sign
 	le = LabelEncoder()
@@ -160,7 +176,12 @@ if __name__ == '__main__':
 		sn_word_len_mean, sn_word_len_std = calculate_mean_std(dataloader=train_dataloaderr, feat_key="sn_word_len")
 
 		# load model
-		dnn = Eyettention(cf)
+		if args.load_pretrained:
+			print("Loading pretrained")
+			dnn = load_pretrained_model(args.pretrained_model_path, cf, device)
+		else:
+			print("Creating new model")
+			dnn = Eyettention(cf)
 
 		#training
 		episode = 0
@@ -278,7 +299,7 @@ if __name__ == '__main__':
 
 			if np.mean(val_loss) < old_score:
 				# save model if val loss is smallest
-				torch.save(dnn.state_dict(), '{}/CELoss_CELER_{}_eyettention_{}_newloss_fold{}.pth'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx))
+				torch.save(dnn.state_dict(), '{}/CELoss_meco_CELER_{}_eyettention_{}_newloss_fold{}.pth'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx))
 				old_score= np.mean(val_loss)
 				print('\nsaved model state dict\n')
 				save_ep_couter = episode_i
@@ -290,7 +311,7 @@ if __name__ == '__main__':
 		#evaluation
 		dnn.eval()
 		res_llh=[]
-		dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,f'CELoss_CELER_{args.test_mode}_eyettention_{args.atten_type}_newloss_fold{fold_indx}.pth'), map_location='cpu'))
+		dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,f'CELoss_meco_CELER_{args.test_mode}_eyettention_{args.atten_type}_newloss_fold{fold_indx}.pth'), map_location='cpu'))
 		dnn.to(device)
 		batch_indx = 0
 		for batchh in test_dataloaderr:
@@ -366,13 +387,13 @@ if __name__ == '__main__':
 		loss_dict['sn_word_len_std'] = sn_word_len_std
 		print('\nTest likelihood is {} \n'.format(np.mean(res_llh)))
 		#save results
-		with open('{}/res_CELER_{}_eyettention_{}_Fold{}.pickle'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx), 'wb') as handle:
+		with open('{}/res_meco_CELER_{}_eyettention_{}_Fold{}.pickle'.format(args.save_data_folder, args.test_mode, args.atten_type, fold_indx), 'wb') as handle:
 			pickle.dump(loss_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 		fold_indx += 1
 
 	if bool(args.scanpath_gen_flag) == True:
 		#save results
 		dic = {"sp_dnn": sp_dnn_list, "sp_human": sp_human_list}
-		with open(os.path.join(args.save_data_folder, f'CELER_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle'), 'wb') as handle:
+		with open(os.path.join(args.save_data_folder, f'meco_CELER_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle'), 'wb') as handle:
 			pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
