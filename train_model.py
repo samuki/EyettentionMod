@@ -6,15 +6,13 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from transformers import BertTokenizerFast
-from model import Eyettention
 from sklearn.preprocessing import LabelEncoder
 from collections import deque
 import pickle
 import argparse
-
 from sklearn.model_selection import train_test_split
 
-
+from model import Eyettention
 from utils import load_pretrained_model, save_with_pickle
 
 if __name__ == '__main__':
@@ -86,7 +84,7 @@ if __name__ == '__main__':
 			"lr": 1e-3,
 			"max_grad_norm": 10,
 			"n_epochs": 1000,
-			"dataset": 'celer',
+			"dataset": 'combined',
 			"atten_type": args.atten_type,
 			"batch_size": 32,
 			"max_sn_len": 256,
@@ -102,52 +100,54 @@ if __name__ == '__main__':
 	le = LabelEncoder()
 	le.fit(np.append(np.arange(-cf["max_sn_len"]+3, cf["max_sn_len"]-1), cf["max_sn_len"]-1))
 	#le.classes_
-
-	#load corpus
-	if cf["dataset"] == 'meco':
-		data_df, sn_df, reader_list = load_corpus(cf["dataset"])
-		split_list = filtered_columns = [col for col in sn_df.columns if col != 'Language']
-  
-	elif cf["dataset"] == 'celer':
-		word_info_df, _, eyemovement_df = load_corpus(cf["dataset"])
-		reader_list = celer_load_native_speaker()
-		split_list = np.unique(word_info_df[word_info_df['list'].isin(reader_list)].sentenceid.values).tolist()
- 
-	initial_train, list_test = train_test_split(split_list, test_size=0.20, random_state=0)
-	# Further splitting the training set into train and validation sets
-	list_train, list_val = train_test_split(initial_train, test_size=0.15, random_state=0)
-	# Preparing the lists for training, validation, and testing
-	loss_dict = {'val_loss':[], 'train_loss':[], 'test_ll':[], 'test_AUC':[]}
- 
- 
-	#for scanpath generation
-	sp_dnn_list = []
-	sp_human_list = []
+	if cf["dataset"] == "combined":
+		# Loading combined dataset
+		print("Loading combined dataset")
+		dataset_train = combineddataset("train")
+		dataset_val = combineddataset("val")
+		dataset_test = combineddataset("test")
+	else:
+		# Preprocess data corpus
+		print("Preprocessing data corpus")
+		if cf["dataset"] == 'meco':
+			data_df, sn_df, reader_list = load_corpus(cf["dataset"])
+			split_list = filtered_columns = [col for col in sn_df.columns if col != 'Language']
 	
-	reader_list_train, reader_list_val, reader_list_test = reader_list, reader_list, reader_list
+		elif cf["dataset"] == 'celer':
+			word_info_df, _, eyemovement_df = load_corpus(cf["dataset"])
+			reader_list = celer_load_native_speaker()
+			split_list = np.unique(word_info_df[word_info_df['list'].isin(reader_list)].sentenceid.values).tolist()
+	
+		initial_train, list_test = train_test_split(split_list, test_size=0.20, random_state=0)
+		# Further splitting the training set into train and validation sets
+		list_train, list_val = train_test_split(initial_train, test_size=0.15, random_state=0)
+		reader_list_train, reader_list_val, reader_list_test = reader_list, reader_list, reader_list
+		#initialize tokenizer
+		tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
+		#Preparing batch data
+		if cf["dataset"] == 'meco':
+			dataset_train = mecodataset(sn_df, data_df, cf, reader_list_train, list_train, tokenizer)
+			dataset_val = mecodataset(sn_df, data_df, cf, reader_list_val, list_val, tokenizer)
+			dataset_test = mecodataset(sn_df, data_df, cf, reader_list_test, list_test, tokenizer)
 
-	#initialize tokenizer
-	tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
-	#Preparing batch data
-	if cf["dataset"] == 'meco':
-		dataset_train = mecodataset(sn_df, data_df, cf, reader_list_train, list_train, tokenizer)
-		dataset_val = mecodataset(sn_df, data_df, cf, reader_list_val, list_val, tokenizer)
-		dataset_test = mecodataset(sn_df, data_df, cf, reader_list_test, list_train, tokenizer)
+		elif cf["dataset"] == 'celer':
+			dataset_train = celerdataset(word_info_df, eyemovement_df, cf, reader_list_train, list_train, tokenizer)
+			dataset_val = celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, list_val, tokenizer)
+			dataset_test = celerdataset(word_info_df, eyemovement_df, cf, reader_list_test, list_test, tokenizer)
 
-	elif cf["dataset"] == 'celer':
-		dataset_train = celerdataset(word_info_df, eyemovement_df, cf, reader_list_train, list_train, tokenizer)
-		dataset_val = celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, list_val, tokenizer)
-		dataset_test = celerdataset(word_info_df, eyemovement_df, cf, reader_list_test, list_train, tokenizer)
-  
-	save_with_pickle(dataset_train, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_train_{args.atten_type}.pickle'))
+		save_with_pickle(dataset_train, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_train_{args.atten_type}.pickle'))
+		save_with_pickle(dataset_val, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_val_{args.atten_type}.pickle'))
+		save_with_pickle(dataset_test, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_test_{args.atten_type}.pickle'))
+
+
 	train_dataloaderr = DataLoader(dataset_train, batch_size = cf["batch_size"], shuffle = True, drop_last=True)
-
-	save_with_pickle(dataset_val, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_val_{args.atten_type}.pickle'))
 	val_dataloaderr = DataLoader(dataset_val, batch_size = cf["batch_size"], shuffle = False, drop_last=True)
-
-	save_with_pickle(dataset_test, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_test_{args.atten_type}.pickle'))
 	test_dataloaderr = DataLoader(dataset_test, batch_size = cf["batch_size"], shuffle = False, drop_last=False)
 
+	#for scanpath generation
+	loss_dict = {'val_loss':[], 'train_loss':[], 'test_ll':[], 'test_AUC':[]}
+	sp_dnn_list = []
+	sp_human_list = []
 	
 	#z-score normalization for gaze features
 	fix_dur_mean, fix_dur_std = calculate_mean_std(dataloader=train_dataloaderr, feat_key="sp_fix_dur", padding_value=0, scale=1000)
@@ -278,7 +278,7 @@ if __name__ == '__main__':
 
 		if np.mean(val_loss) < old_score:
 			# save model if val loss is smallest
-			torch.save(dnn.state_dict(), '{}/CELoss_meco_{}_eyettention_{}_newloss.pth'.format(args.save_data_folder, args.test_mode, args.atten_type))
+			torch.save(dnn.state_dict(), f'{args.save_data_folder}/CELoss_{cf["dataset"]}_eyettention_{args.atten_type}_newloss.pth')
 			old_score= np.mean(val_loss)
 			print('\nsaved model state dict\n')
 			save_ep_couter = episode_i
@@ -290,7 +290,8 @@ if __name__ == '__main__':
 	#evaluation
 	dnn.eval()
 	res_llh=[]
-	dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,f'CELoss_meco_{args.test_mode}_eyettention_{args.atten_type}_newloss.pth'), map_location='cpu'))
+	dnn.load_state_dict(torch.load(os.path.join(args.save_data_folder,\
+     	f'CELoss_{cf["dataset"]}_{args.test_mode}_eyettention_{args.atten_type}_newloss.pth'), map_location='cpu'))
 	dnn.to(device)
 	batch_indx = 0
 	for batchh in test_dataloaderr:
@@ -366,11 +367,11 @@ if __name__ == '__main__':
 	loss_dict['sn_word_len_std'] = sn_word_len_std
 	print('\nTest likelihood is {} \n'.format(np.mean(res_llh)))
 	#save results
-	with open('{}/res_CELER_{}_eyettention_{}.pickle'.format(args.save_data_folder, args.test_mode, args.atten_type), 'wb') as handle:
+	with open(f'{args.save_data_folder}/res_{cf["dataset"]}_eyettention_{args.atten_type}.pickle', 'wb') as handle:
 		pickle.dump(loss_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 	if bool(args.scanpath_gen_flag) == True:
 		#save results
 		dic = {"sp_dnn": sp_dnn_list, "sp_human": sp_human_list}
-		with open(os.path.join(args.save_data_folder, f'meco_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle'), 'wb') as handle:
+		with open(f'{args.save_data_folder}/{cf["dataset"]}_scanpath_generation_eyettention_{args.test_mode}_{args.atten_type}.pickle', 'wb') as handle:
 			pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)

@@ -15,6 +15,10 @@ def save_with_pickle(data, filename):
     with open(filename, "wb") as file:
         pickle.dump(data, file)
         
+def load_with_pickle(filename):
+    with open(filename, "rb") as file:
+        return pickle.load(file)
+        
 def load_pretrained_model(model_path, cf, device):
 	# Load model
 	dnn = Eyettention(cf)
@@ -92,7 +96,6 @@ def load_corpus(corpus, task=None):
 		readers = list(meco_df['uniform_id'].dropna().unique())
 		return meco_df, sentences_df, readers
 
-		
 
 def compute_BSC_word_length(sn_df):
 	word_len = sn_df.LEN.values
@@ -104,6 +107,7 @@ def compute_BSC_word_length(sn_df):
 	arr[arr==0] = 1/(0+0.5)
 	arr[arr!=0] = 1/(arr[arr!=0])
 	return arr
+
 
 def pad_seq(seqs, max_len, pad_value, dtype=np.compat.long):
 	padded = np.full((len(seqs), max_len), fill_value=pad_value, dtype=dtype)
@@ -934,7 +938,59 @@ class mecodataset(Dataset):
 		sample["sp_pos"] = self.data["SP_ordinal_pos"][idx,:]
 		sample["sp_fix_dur"] = self.data["SP_fix_dur"][idx,:]
 		sample["sp_landing_pos"] = self.data["SP_landing_pos"][idx,:]
+  
+		sample["sub_id"] = self.data["sub_id"][idx]
 
+		return sample
+
+
+def merge_and_shuffle_datasets(dataset1, dataset2):
+    merged_data = {}
+    # Select a key to generate shuffled indices based on its length
+    key_to_shuffle = list(dataset1.data.keys())[0]
+    # Determine the total length after concatenation
+    total_length = dataset1.data[key_to_shuffle].shape[0] + dataset2.data[key_to_shuffle].shape[0]
+    # Generate shuffled indices
+    shuffled_indices = np.random.permutation(total_length)
+    # Concatenate and then shuffle the arrays from both datasets for each key
+    for key in dataset1.data:
+        concatenated_array = np.concatenate((dataset1.data[key], dataset2.data[key]), axis=0)
+        # Apply the same shuffled indices to each concatenated array
+        merged_data[key] = concatenated_array[shuffled_indices]  
+    return merged_data
+
+
+def load_combined_dataset(split):
+	# load preprocessed datafiles, change this manually for now
+	path = 'Data/combined/'
+	celer = load_with_pickle(f'{path}celer_dataset_{split}_local-g.pickle')
+	meco = load_with_pickle(f'{path}meco_dataset_{split}_local-g.pickle')
+	return merge_and_shuffle_datasets(celer, meco)
+
+
+class combineddataset(Dataset):
+	"""Return celer dataset."""
+	def __init__(self, split):
+		self.data = load_combined_dataset(split)
+
+	def __len__(self):
+		return len(self.data["SN_input_ids"])
+
+	def __getitem__(self,idx):
+		sample = {}
+		sample["sn_input_ids"] = self.data["SN_input_ids"][idx,:]
+		sample["sn_attention_mask"] = self.data["SN_attention_mask"][idx,:]
+		sample["sn_word_len"] = self.data['SN_WORD_len'][idx,:]
+		sample['word_ids_sn'] =  self.data['WORD_ids_sn'][idx,:]
+
+		sample["sp_input_ids"] = self.data["SP_input_ids"][idx,:]
+		sample["sp_attention_mask"] = self.data["SP_attention_mask"][idx,:]
+		sample['word_ids_sp'] =  self.data['WORD_ids_sp'][idx,:]
+
+		sample["sp_pos"] = self.data["SP_ordinal_pos"][idx,:]
+		sample["sp_fix_dur"] = self.data["SP_fix_dur"][idx,:]
+		sample["sp_landing_pos"] = self.data["SP_landing_pos"][idx,:]
+  
 		sample["sub_id"] = self.data["sub_id"][idx]
 
 		return sample
