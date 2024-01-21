@@ -9,7 +9,12 @@ from tqdm import tqdm
 import re
 
 from model import Eyettention
+import pickle
 
+def save_with_pickle(data, filename):
+    with open(filename, "wb") as file:
+        pickle.dump(data, file)
+        
 def load_pretrained_model(model_path, cf, device):
 	# Load model
 	dnn = Eyettention(cf)
@@ -63,7 +68,7 @@ def load_corpus(corpus, task=None):
 			'Korean': 'ko',
 			'Norwegian': 'no',
 			'Russian': 'ru',
-			'Spanish': 'es',
+			'Spanish': 'sp',
 			'Turkish': 'tr'
 		}
 		# Converting the language column to codes
@@ -717,8 +722,8 @@ class celerdataset(Dataset):
 		word_info_df, eyemovement_df, cf, reader_list, sn_list, tokenizer
 	):
 
-		#self.data = _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
-		self.data = _process_celer_merged(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
+		#self.data = _process_celer_merged(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
+		self.data = _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf)
 
 	def __len__(self):
 		return len(self.data["SN_input_ids"])
@@ -761,7 +766,6 @@ from tqdm import tqdm
 from torch.utils.data import Dataset
 
 def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
-    # sn_df, data_df, cf, reader_list, sn_list, tokenizer
 	# Initialize lists to store processed data
 	SN_input_ids, SN_attention_mask, SN_WORD_len, WORD_ids_sn = [], [], [], []
 	SP_input_ids, SP_attention_mask, WORD_ids_sp = [], [], []
@@ -771,12 +775,14 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 	for sub_id in tqdm(reader_list):
 		lang_code = sub_id.split('_')[0]
 		#if lang_code not in ['du', 'en', 'ee', 'fi', 'ge', 'it', 'no', 'es', 'tr']:
-		if lang_code not in ['du', 'en', 'ge']:
-			continue
+		#if lang_code not in ["en"]:
+		#	continue
 		# Iterate over sentences in the MeCo dataset
 		for sent_id in sn_list:
 			# Extract text by language rowID and column textID
 			text = sn_df.loc[sn_df['Language'] == lang_code, sent_id].iloc[0].replace('"', '')
+			#print(sent_id)
+			#print(text[:100])
 			subj_fix_df = data_df[(data_df['uniform_id'] == sub_id)\
        			& (data_df['itemid'] == sent_id)]
 			if len(subj_fix_df) == 0:
@@ -805,7 +811,7 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 			sp_fix_dur = subj_fix_df['dur'].dropna().values
 			sp_landing_pos = subj_fix_df['word.land'].dropna().values
 			sp_words = subj_fix_df['word'].dropna().values.tolist()
-			#split_text = re.split(r'(?<=-)\b|\s', text_str)
+			#print("word: ", sp_words[:20])
 			split_text = re.split(r'(?<=-)\b|\s+', text_str)
 			# Processing for scanpath (fixated word sequence)
 			try:
@@ -816,23 +822,23 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
    
 			try:
 				assert sp_words == sp_token
-			except AssertionError as e:
+			except AssertionError as e: # Lists not completely equal, check for unequal words
 				print(f"Assertion Error: {e}")
 				print("subject id ", sub_id)
-				#print("sp_word_pos ", sp_word_pos, len(sp_word_pos))
-				#print("Original words ", sp_words, len(sp_words))
-				#print("Extracted words ", sp_token, len(sp_token))
-				print("Original words ", len(sp_words))
-				print("Extracted words ", len(sp_token))	
-				unequal_words = [(word1, word2) for word1, word2 in zip(sp_words, sp_token) if word1 != word2]
-				print("Unequal words ", unequal_words)
-				if len(sp_words) != len(sp_token):
-					print("Unequal length")
-					continue
+				with open("unequal_words3.txt", "a") as file:  # Open the file in append mode
+					unequal_words = [(word1, word2) for word1, word2 in zip(sp_words, sp_token) if word1.strip('":-,.–;”∙').strip("'") != word2.strip('":-,.–;”∙').strip("'")]
+					#print(unequal_words)
+					# Write to file if there are unequal words
+					if unequal_words: # If there are unequal words the index is shifted and we skip the sentence
+						file.write(f"Original words: {sp_words}, Count: {len(sp_words)}\n")
+						file.write(f"Extracted words: {sp_token}, Count: {len(sp_token)}\n")
+						file.write(f"Unequal words: {unequal_words}\n\n")
+						continue  # Continue with the next sentence of the loop
+					
+					if len(sp_words) != len(sp_token):
+						print("Unequal length")
+						continue  # Continue with the next iteration of the loop
 
-    
-
-    
 			sp_token_str = '[CLS] ' + ' '.join(sp_token) + ' [SEP]'
 
 			# Tokenization and padding for scanpath

@@ -13,7 +13,7 @@ from collections import deque
 import pickle
 import argparse
 
-from utils import load_pretrained_model
+from utils import load_pretrained_model, save_with_pickle
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='run Eyettention on Meco dataset')
@@ -85,7 +85,7 @@ if __name__ == '__main__':
 			"lr": 1e-3,
 			"max_grad_norm": 10,
 			"n_epochs": 1000,
-			"n_folds": 5,
+			"n_folds": 1,
 			"dataset": 'meco',
 			"atten_type": args.atten_type,
 			"batch_size": 32,
@@ -140,14 +140,18 @@ if __name__ == '__main__':
 		tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
 		#Preparing batch data
 		dataset_train = mecodataset(sn_df, data_df, cf, reader_list_train, sn_list_train, tokenizer)
+		save_with_pickle(dataset_train, os.path.join(args.save_data_folder, f'meco_dataset_train_{args.test_mode}_{args.atten_type}_fold{fold_indx}.pickle'))
 		train_dataloaderr = DataLoader(dataset_train, batch_size = cf["batch_size"], shuffle = True, drop_last=True)
 
 		dataset_val = mecodataset(sn_df, data_df, cf, reader_list_val, sn_list_val, tokenizer)
+		save_with_pickle(dataset_val, os.path.join(args.save_data_folder, f'meco_dataset_val_{args.test_mode}_{args.atten_type}_fold{fold_indx}.pickle'))
 		val_dataloaderr = DataLoader(dataset_val, batch_size = cf["batch_size"], shuffle = False, drop_last=True)
 
 		dataset_test = mecodataset(sn_df, data_df, cf, reader_list_test, sn_list_test, tokenizer)
+		save_with_pickle(dataset_test, os.path.join(args.save_data_folder, f'meco_dataset_test_{args.test_mode}_{args.atten_type}_fold{fold_indx}.pickle'))
 		test_dataloaderr = DataLoader(dataset_test, batch_size = cf["batch_size"], shuffle = False, drop_last=False)
 
+		
 		#z-score normalization for gaze features
 		fix_dur_mean, fix_dur_std = calculate_mean_std(dataloader=train_dataloaderr, feat_key="sp_fix_dur", padding_value=0, scale=1000)
 		landing_pos_mean, landing_pos_std = calculate_mean_std(dataloader=train_dataloaderr, feat_key="sp_landing_pos", padding_value=0)
