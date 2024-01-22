@@ -13,6 +13,7 @@ import argparse
 from sklearn.model_selection import train_test_split
 
 from model import Eyettention
+from baseline_model import EyettentionBaseline
 from utils import load_pretrained_model, save_with_pickle
 
 if __name__ == '__main__':
@@ -65,6 +66,12 @@ if __name__ == '__main__':
 		type=bool,
 		default=False
 	)
+	parser.add_argument(
+		'--use_baseline',
+		help='Baseline Model without SP information',
+		type=bool,
+		default=False
+	)
 	args = parser.parse_args()
 	gpu = args.gpu
 
@@ -79,7 +86,10 @@ if __name__ == '__main__':
 	else:
 		device = 'cpu'
 	print(device)
-
+ 
+	if args.use_baseline: # We need to use global attention for baseline model
+		args.atten_type = 'global'
+  
 	cf = {"model_pretrained": "bert-base-multilingual-cased", # Multiling BERT
 			"lr": 1e-3,
 			"max_grad_norm": 10,
@@ -160,7 +170,10 @@ if __name__ == '__main__':
 		dnn = load_pretrained_model(args.pretrained_model_path, cf, device)
 	else:
 		print("Creating new model")
-		dnn = Eyettention(cf)
+		if args.use_baseline:
+			dnn = EyettentionBaseline(cf)
+		else:
+			dnn = Eyettention(cf)
 
 	#training
 	episode = 0
