@@ -154,9 +154,9 @@ class Eyettention(nn.Module):
 	def decode(self, sp_emd, sn_mask, sp_pos, enc_out, sp_fix_dur, sp_landing_pos, word_ids_sp):
 		# Fixation-Sequence Encoder + Decoder
 		# Initialize hidden state and cell state with zeros,
-		hn = torch.zeros(8, sp_emd.shape[0], self.hidden_size).to(sp_emd.device)
-		hc = torch.zeros(8, sp_emd.shape[0], self.hidden_size).to(sp_emd.device)
-		hx, cx = hn[0,:,:], hc[0,:,:]
+		hn = torch.zeros(8, sp_emd.shape[0], self.hidden_size).to(sp_emd.device) # 8 x 32 x 128
+		hc = torch.zeros(8, sp_emd.shape[0], self.hidden_size).to(sp_emd.device) # 8 x 32 x 128
+		hx, cx = hn[0,:,:], hc[0,:,:] # each 32 x 128
 		hx2, cx2 = hn[1,:,:], hc[1,:,:]
 		hx3, cx3 = hn[2,:,:], hc[2,:,:]
 		hx4, cx4 = hn[3,:,:], hc[3,:,:]
@@ -164,8 +164,8 @@ class Eyettention(nn.Module):
 		hx6, cx6 = hn[5,:,:], hc[5,:,:]
 		hx7, cx7 = hn[6,:,:], hc[6,:,:]
 		hx8, cx8 = hn[7,:,:], hc[7,:,:]
-
-		dec_emb_in = self.encoder.embeddings.word_embeddings(sp_emd[:, :-1])
+		# sp embed 32 x 512
+		dec_emb_in = self.encoder.embeddings.word_embeddings(sp_emd[:, :-1]) # 511 x 32 x 770
 		if word_ids_sp is not None:
 			# Pool bert subword to word level for English corpus
 			sp_merged_word_emd, sp_mask_word = self.pool_subword_to_word(dec_emb_in,
@@ -192,7 +192,7 @@ class Eyettention(nn.Module):
 		#Predict output for each time step in turn
 		output = []
 		#save attention scores for visualization
-		atten_weights_batch = torch.empty(sp_emd.shape[0], 0, self.cf["max_sn_len"]).to(sp_emd.device)
+		atten_weights_batch = torch.empty(sp_emd.shape[0], 0, self.cf["max_sn_len"]).to(sp_emd.device) # 32 x 0 x 256
 		for i in range(dec_emb_in.shape[0]):
 			hx, cx = self.decoder_cell1(dec_emb_in[i], (hx, cx))     # [batch, units]
 			hx2, cx2 = self.decoder_cell2(self.dropout_LSTM(hx), (hx2, cx2))

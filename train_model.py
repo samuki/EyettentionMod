@@ -5,16 +5,14 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from transformers import BertTokenizerFast
 from sklearn.preprocessing import LabelEncoder
 from collections import deque
 import pickle
 import argparse
-from sklearn.model_selection import train_test_split
 
 from model import Eyettention
 from baseline_model import EyettentionBaseline
-from utils import load_pretrained_model, save_with_pickle
+from utils import load_pretrained_model, save_with_pickle, load_dataset, preprocess_and_load
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='run Eyettention on Meco dataset')
@@ -28,7 +26,7 @@ if __name__ == '__main__':
 		'--save_data_folder',
 		help='folder path for saving results',
 		type=str,
-		default='./results/meco/'
+		default='./results'
 	)
 	parser.add_argument(
 		'--scanpath_gen_flag',
@@ -65,6 +63,12 @@ if __name__ == '__main__':
 		help='load extracted dataset',
 		type=bool,
 		default=False
+	)
+	parser.add_argument(
+		'--dataset_path',
+		help='path to load extracted dataset',
+		type=str,
+		default="Data/combined/"
 	)
 	parser.add_argument(
 		'--use_baseline',
@@ -105,50 +109,24 @@ if __name__ == '__main__':
 			"earlystop_patience": 20,
 			"max_pred_len":args.max_pred_len
 			}
-
-	#Encode the label into interger categories, setting the exclusive category 'cf["max_sn_len"]-1' as the end sign
+	# Create folder to save results
+	args.save_data_folder = os.path.join(args.save_data_folder, cf["dataset"])
+	os.makedirs(args.save_data_folder, exist_ok=True)
+	# Encode the label into interger categories, setting the exclusive category 'cf["max_sn_len"]-1' as the end sign
 	le = LabelEncoder()
 	le.fit(np.append(np.arange(-cf["max_sn_len"]+3, cf["max_sn_len"]-1), cf["max_sn_len"]-1))
-	#le.classes_
-	if cf["dataset"] == "combined":
-		# Loading combined dataset
-		print("Loading combined dataset")
-		dataset_train = combineddataset("train")
-		dataset_val = combineddataset("val")
-		dataset_test = combineddataset("test")
+
+	if args.load_dataset:
+		print("Loading dataset "+ cf["dataset"] + " from " + args.dataset_path )
+		dataset_train = load_dataset(cf["dataset"], "train", args.dataset_path)
+		dataset_val = load_dataset(cf["dataset"], "val", args.dataset_path)
+		dataset_test = load_dataset(cf["dataset"], "test", args.dataset_path)
 	else:
-		# Preprocess data corpus
-		print("Preprocessing data corpus")
-		if cf["dataset"] == 'meco':
-			data_df, sn_df, reader_list = load_corpus(cf["dataset"])
-			split_list = filtered_columns = [col for col in sn_df.columns if col != 'Language']
-	
-		elif cf["dataset"] == 'celer':
-			word_info_df, _, eyemovement_df = load_corpus(cf["dataset"])
-			reader_list = celer_load_native_speaker()
-			split_list = np.unique(word_info_df[word_info_df['list'].isin(reader_list)].sentenceid.values).tolist()
-	
-		initial_train, list_test = train_test_split(split_list, test_size=0.20, random_state=0)
-		# Further splitting the training set into train and validation sets
-		list_train, list_val = train_test_split(initial_train, test_size=0.15, random_state=0)
-		reader_list_train, reader_list_val, reader_list_test = reader_list, reader_list, reader_list
-		#initialize tokenizer
-		tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
-		#Preparing batch data
-		if cf["dataset"] == 'meco':
-			dataset_train = mecodataset(sn_df, data_df, cf, reader_list_train, list_train, tokenizer)
-			dataset_val = mecodataset(sn_df, data_df, cf, reader_list_val, list_val, tokenizer)
-			dataset_test = mecodataset(sn_df, data_df, cf, reader_list_test, list_test, tokenizer)
-
-		elif cf["dataset"] == 'celer':
-			dataset_train = celerdataset(word_info_df, eyemovement_df, cf, reader_list_train, list_train, tokenizer)
-			dataset_val = celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, list_val, tokenizer)
-			dataset_test = celerdataset(word_info_df, eyemovement_df, cf, reader_list_test, list_test, tokenizer)
-
+		dataset_train, dataset_val, dataset_test = preprocess_and_load(cf)
+		# Save datasets
 		save_with_pickle(dataset_train, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_train_{args.atten_type}.pickle'))
 		save_with_pickle(dataset_val, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_val_{args.atten_type}.pickle'))
 		save_with_pickle(dataset_test, os.path.join(args.save_data_folder, f'{cf["dataset"]}_dataset_test_{args.atten_type}.pickle'))
-
 
 	train_dataloaderr = DataLoader(dataset_train, batch_size = cf["batch_size"], shuffle = True, drop_last=True)
 	val_dataloaderr = DataLoader(dataset_val, batch_size = cf["batch_size"], shuffle = False, drop_last=True)

@@ -1,15 +1,17 @@
 #coding=utf-8
-import numpy as np
-import pandas as pd
-import os
-from typing import Tuple
-from torch.utils.data import Dataset
-import torch
-from tqdm import tqdm
 import re
+import os
+import numpy as np
+import pickle
+import pandas as pd
+from typing import Tuple
+from tqdm import tqdm
+import torch
+from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
+from transformers import BertTokenizerFast
 
 from model import Eyettention
-import pickle
 
 def save_with_pickle(data, filename):
     with open(filename, "wb") as file:
@@ -77,21 +79,16 @@ def load_corpus(corpus, task=None):
 		}
 		# Converting the language column to codes
 		sentences_df['Unnamed: 0'] = sentences_df['Unnamed: 0'].map(language_code)
-
 		# Renaming the language column
 		sentences_df.rename(columns={'Unnamed: 0': 'Language'}, inplace=True)
-
 		# Renaming the text columns to numeric indices
 		text_columns = sentences_df.columns[1:-2]  # Excluding the first language column and last two unnamed columns
-  
 		renamed_columns = {name: str(index) for index, name in enumerate(text_columns, start=1)}
 		sentences_df.rename(columns=renamed_columns, inplace=True)
-
 		# Dropping the last two unnamed columns
 		sentences_df.drop(columns=['Unnamed: 13', 'Unnamed: 14'], inplace=True)
 		# Final 13 x 13 df
 		sentences_df = sentences_df.dropna(how='all')
-
 		# Creating a list of unique readers (subjects)
 		readers = list(meco_df['uniform_id'].dropna().unique())
 		return meco_df, sentences_df, readers
@@ -247,6 +244,7 @@ class BSCdataset(Dataset):
 
 		return sample
 
+
 def calculate_mean_std(dataloader, feat_key, padding_value=0, scale=1):
 	#calculate mean
 	total_sum = 0
@@ -269,6 +267,7 @@ def calculate_mean_std(dataloader, feat_key, padding_value=0, scale=1):
 	feat_std = torch.sqrt(sum_of_squared_error / total_num)
 	return feat_mean, feat_std
 
+
 def load_label(sp_pos, cf, labelencoder, device):
 	#prepare label and mask
 	pad_mask = torch.eq(sp_pos[:, 1:], cf["max_sn_len"])
@@ -281,6 +280,7 @@ def load_label(sp_pos, cf, labelencoder, device):
 	label = torch.from_numpy(label).to(device)
 	return pad_mask, label
 
+
 def likelihood(pred, label, mask):
 	#test
 	#res = F.nll_loss(torch.tensor(pred), torch.tensor(label))
@@ -289,6 +289,7 @@ def likelihood(pred, label, mask):
 	res = np.sum(np.multiply(pred, label), axis=1)
 	res = np.sum(res * ~mask)/np.sum(~mask)
 	return res
+
 
 def eval_log_llh(dnn_out, label, pad_mask):
 	res = []
@@ -326,11 +327,13 @@ def prepare_scanpath(sp_dnn, sn_len, sp_human, cf):
 	sp_human_cut = [sp_human[i][:stop_indx[i]+1] for i in range(sp_human.shape[0])]
 	return sp_dnn_cut, sp_human_cut
 
+
 def celer_load_native_speaker():
 	sub_metadata_path = './Data/celer/metadata.tsv'
 	sub_infor = pd.read_csv(sub_metadata_path, delimiter='\t')
 	native_sub_list = sub_infor[sub_infor.L1 == 'English'].List.values
 	return native_sub_list.tolist()
+
 
 def compute_word_length_celer(arr):
 	#length of a punctuation is 0, plus an epsilon to avoid division output inf
@@ -338,6 +341,7 @@ def compute_word_length_celer(arr):
 	arr[arr==0] = 1/(0+0.5)
 	arr[arr!=0] = 1/(arr[arr!=0])
 	return arr
+
 
 def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer, cf):
 	"""
@@ -960,18 +964,63 @@ def merge_and_shuffle_datasets(dataset1, dataset2):
     return merged_data
 
 
-def load_combined_dataset(split):
-	# load preprocessed datafiles, change this manually for now
-	path = 'Data/combined/'
-	celer = load_with_pickle(f'{path}celer_dataset_{split}_local-g.pickle')
-	meco = load_with_pickle(f'{path}meco_dataset_{split}_local-g.pickle')
+def load_celer(path, split):
+    return load_with_pickle(f'{path}celer_dataset_{split}_local-g.pickle')
+
+
+def load_meco(path, split):
+    return load_with_pickle(f'{path}celer_dataset_{split}_local-g.pickle')
+
+
+def load_combined_dataset(path, split):
+	celer = load_celer(path, split)
+	meco = load_meco(path, split)
 	return merge_and_shuffle_datasets(celer, meco)
+
+
+def load_dataset(dataset_name, dataset_type, dataset_path):
+	if dataset_name == "meco":
+		return load_meco(dataset_path, dataset_type)
+	elif dataset_name == "celer":
+		return load_celer(dataset_path, dataset_type)
+	elif dataset_name == "combined":
+		return combineddataset(dataset_path, dataset_type)
+	else:
+		raise ValueError(f"Unknown dataset: {dataset_name}")
+
+
+def preprocess_and_load(cf):
+	# Preprocess data corpus
+	print("Preprocessing data corpus")
+	if cf["dataset"] == 'meco':
+		data_df, sn_df, reader_list = load_corpus(cf["dataset"])
+		split_list = [col for col in sn_df.columns if col != 'Language']
+	elif cf["dataset"] == 'celer':
+		word_info_df, _, eyemovement_df = load_corpus(cf["dataset"])
+		reader_list = celer_load_native_speaker()
+		split_list = np.unique(word_info_df[word_info_df['list'].isin(reader_list)].sentenceid.values).tolist()
+
+	initial_train, list_test = train_test_split(split_list, test_size=0.20, random_state=0)
+	# Further splitting the training set into train and validation sets
+	list_train, list_val = train_test_split(initial_train, test_size=0.15, random_state=0)
+	reader_list_train, reader_list_val, reader_list_test = reader_list, reader_list, reader_list
+	#initialize tokenizer
+	tokenizer = BertTokenizerFast.from_pretrained(cf['model_pretrained'])
+	# Preparing batch data
+	if cf["dataset"] == 'meco':
+		return mecodataset(sn_df, data_df, cf, reader_list_train, list_train, tokenizer), \
+			mecodataset(sn_df, data_df, cf, reader_list_val, list_val, tokenizer), \
+			mecodataset(sn_df, data_df, cf, reader_list_test, list_test, tokenizer)
+	elif cf["dataset"] == 'celer':
+		return celerdataset(word_info_df, eyemovement_df, cf, reader_list_train, list_train, tokenizer), \
+			celerdataset(word_info_df, eyemovement_df, cf, reader_list_val, list_val, tokenizer), \
+			celerdataset(word_info_df, eyemovement_df, cf, reader_list_test, list_test, tokenizer)
 
 
 class combineddataset(Dataset):
 	"""Return celer dataset."""
-	def __init__(self, split):
-		self.data = load_combined_dataset(split)
+	def __init__(self, path, split):
+		self.data = load_combined_dataset(path, split)
 
 	def __len__(self):
 		return len(self.data["SN_input_ids"])
