@@ -59,8 +59,14 @@ if __name__ == '__main__':
 		default="results/meco/CELoss_meco_text_eyettention_local-g_newloss.pth"
 	)
 	parser.add_argument(
+		'--dataset',
+		help='dataset',
+		type=str,
+		default="combined"
+	)
+	parser.add_argument(
 		'--load_dataset',
-		help='load extracted dataset',
+		help='load extracted dataset instead of extracting from raw data',
 		type=bool,
 		default=False
 	)
@@ -98,7 +104,7 @@ if __name__ == '__main__':
 			"lr": 1e-3,
 			"max_grad_norm": 10,
 			"n_epochs": 1000,
-			"dataset": 'combined',
+			"dataset": args.dataset,
 			"atten_type": args.atten_type,
 			"batch_size": 32,
 			"max_sn_len": 256,
