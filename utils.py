@@ -354,7 +354,7 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 	SN_input_ids, SN_attention_mask, SN_WORD_len, WORD_ids_sn = [], [], [], []
 	SP_input_ids, SP_attention_mask, WORD_ids_sp = [], [], []
 	SP_ordinal_pos, SP_landing_pos, SP_fix_dur = [], [], []
-	sub_id_list =  []
+	sub_id_list, raw_split_words =  [], []
 	for sn_id in tqdm(sn_list):
 	 
 		#process sentence sequence
@@ -376,6 +376,8 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 
 		#tokenization and padding
 		tokenizer.padding_side = 'right'
+  
+		raw_split_text = sn_str.split()
 		sn_str = '[CLS]' + ' ' + sn_str + ' ' + '[SEP]'
 		#pre-tokenized input
 		tokens = tokenizer.encode_plus(sn_str.split(),
@@ -491,12 +493,19 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 			SN_WORD_len.append(sn_word_len)
 			WORD_ids_sn.append(word_ids_sn)
 			sub_id_list.append(int(sub_id))
+   
+			raw_split_words.append(raw_split_text)
+			#print(SP_ordinal_pos, raw_split_words)
 
+	raw_sp_pos = SP_ordinal_pos
+ 
 	#padding for batch computation
 	SP_ordinal_pos = pad_seq(SP_ordinal_pos, max_len=(cf["max_sp_len"]), pad_value=cf["max_sn_len"])
 	SP_fix_dur = pad_seq(SP_fix_dur, max_len=(cf["max_sp_len"]), pad_value=0)
 	SP_landing_pos = pad_seq(SP_landing_pos, cf["max_sp_len"], pad_value=0, dtype=np.float32)
 	SN_WORD_len = pad_seq_with_nan(SN_WORD_len, cf["max_sn_len"], dtype=np.float32)
+ 
+	
 
 	#assign type
 	SN_input_ids = np.asarray(SN_input_ids, dtype=np.int64)
@@ -507,10 +516,11 @@ def _process_celer(sn_list, reader_list, word_info_df, eyemovement_df, tokenizer
 	WORD_ids_sn = np.asarray(WORD_ids_sn)
 	WORD_ids_sp = np.asarray(WORD_ids_sp)
 
+
 	data = {"SN_input_ids": SN_input_ids, "SN_attention_mask": SN_attention_mask, "SN_WORD_len": SN_WORD_len, "WORD_ids_sn": WORD_ids_sn,
 	 		"SP_input_ids": SP_input_ids, "SP_attention_mask": SP_attention_mask, "WORD_ids_sp": WORD_ids_sp,
 			"SP_ordinal_pos": np.array(SP_ordinal_pos), "SP_landing_pos": np.array(SP_landing_pos), "SP_fix_dur": np.array(SP_fix_dur),
-			"sub_id": sub_id_list,
+			"sub_id": sub_id_list, "raw_split_words": raw_split_words, "raw_sp_pos": raw_sp_pos
 			}
 
 	return data
@@ -773,12 +783,13 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
+
 def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 	# Initialize lists to store processed data
 	SN_input_ids, SN_attention_mask, SN_WORD_len, WORD_ids_sn = [], [], [], []
 	SP_input_ids, SP_attention_mask, WORD_ids_sp = [], [], []
 	SP_ordinal_pos, SP_landing_pos, SP_fix_dur = [], [], []
-	sub_id_list = []
+	sub_id_list, raw_split_words = [], []
 	# We need to iterate over the subjects and then over the trialid or itemid
 	for sub_id in tqdm(reader_list):
 		lang_code = sub_id.split('_')[0]
@@ -821,6 +832,7 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 			sp_words = subj_fix_df['word'].dropna().values.tolist()
 			#print("word: ", sp_words[:20])
 			split_text = re.split(r'(?<=-)\b|\s+', text_str)
+			raw_slit_text = re.split(r'(?<=-)\b|\s+', text)
 			# Processing for scanpath (fixated word sequence)
 			try:
 				sp_token = [split_text[int(i)] for i in sp_word_pos]
@@ -886,7 +898,11 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 			sub_id_list.append(sub_id)
 			SP_landing_pos.append(sp_landing_pos)
 
+			raw_split_words.append(raw_slit_text)
+
 	# Padding for batch computation 
+	raw_sp_pos = SP_ordinal_pos
+ 
 	SP_ordinal_pos = pad_seq(SP_ordinal_pos, max_len=(cf["max_sp_len"]), pad_value=cf["max_sn_len"])
 	SP_fix_dur = pad_seq(SP_fix_dur, max_len=(cf["max_sp_len"]), pad_value=0)
 	SP_landing_pos = pad_seq(SP_landing_pos, cf["max_sp_len"], pad_value=0, dtype=np.float32)
@@ -901,6 +917,8 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 	sub_id_list = np.asarray(sub_id_list)
 	WORD_ids_sn = np.asarray(WORD_ids_sn)
 	WORD_ids_sp = np.asarray(WORD_ids_sp)
+ 
+	raw_split_words = raw_split_words
 
 	# Create the final data structure
 	data = {
@@ -914,7 +932,9 @@ def _process_meco(sn_df, data_df, cf, reader_list, sn_list, tokenizer):
 		"SP_ordinal_pos": np.array(SP_ordinal_pos),
 		"SP_fix_dur": np.array(SP_fix_dur),
 		"sub_id": np.array(sub_id_list),
-		"SP_landing_pos": np.array(SP_landing_pos)
+		"SP_landing_pos": np.array(SP_landing_pos),
+		"raw_split_words": raw_split_words,
+		"raw_sp_pos": raw_sp_pos
 	}
 
 	return data
@@ -948,6 +968,27 @@ class mecodataset(Dataset):
 		return sample
 
 
+def merge_and_extract_datasets(dataset1, dataset2):
+	merged_data = {}
+	keys = ['raw_split_words', 'raw_sp_pos']
+	dataset1 = dataset1.data
+	dataset2 = dataset2.data
+	# Select a key to generate shuffled indices based on its length
+	key_to_shuffle = keys[0]
+	# Determine the total length after concatenation
+	total_length = len(dataset1[key_to_shuffle]) + len(dataset2[key_to_shuffle])
+	# Generate shuffled indices
+	shuffled_indices = list(range(total_length))
+	import random
+	random.shuffle(shuffled_indices)
+	# Concatenate and then shuffle the lists from both datasets for each key
+	for key in keys:
+		concatenated_list = dataset1[key] + dataset2[key]
+		# Apply the same shuffled indices to each concatenated list
+		merged_data[key] = [concatenated_list[i] for i in shuffled_indices]
+	return merged_data
+
+
 def merge_and_shuffle_datasets(dataset1, dataset2):
     merged_data = {}
     # Select a key to generate shuffled indices based on its length
@@ -969,7 +1010,7 @@ def load_celer(path, split):
 
 
 def load_meco(path, split):
-    return load_with_pickle(f'{path}celer_dataset_{split}_local-g.pickle')
+    return load_with_pickle(f'{path}meco_dataset_{split}_local-g.pickle')
 
 
 def load_combined_dataset(path, split):
