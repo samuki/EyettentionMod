@@ -11,7 +11,6 @@ import pickle
 import argparse
 
 from model import Eyettention
-from baseline_model import EyettentionBaseline
 from utils import load_pretrained_model, save_with_pickle, load_dataset, preprocess_and_load
 
 if __name__ == '__main__':
@@ -62,7 +61,7 @@ if __name__ == '__main__':
 		'--dataset',
 		help='dataset',
 		type=str,
-		default="combined"
+		default="celer"
 	)
 	parser.add_argument(
 		'--load_dataset',
@@ -75,12 +74,6 @@ if __name__ == '__main__':
 		help='path to load extracted dataset',
 		type=str,
 		default="Data/combined/"
-	)
-	parser.add_argument(
-		'--use_baseline',
-		help='Baseline Model without SP information',
-		type=bool,
-		default=False
 	)
 	args = parser.parse_args()
 	gpu = args.gpu
@@ -96,9 +89,6 @@ if __name__ == '__main__':
 	else:
 		device = 'cpu'
 	print(device)
- 
-	if args.use_baseline: # We need to use global attention for baseline model
-		args.atten_type = 'global'
   
 	cf = {"model_pretrained": "bert-base-multilingual-cased", # Multiling BERT
 			"lr": 1e-3,
@@ -154,10 +144,7 @@ if __name__ == '__main__':
 		dnn = load_pretrained_model(args.pretrained_model_path, cf, device)
 	else:
 		print("Creating new model")
-		if args.use_baseline:
-			dnn = EyettentionBaseline(cf)
-		else:
-			dnn = Eyettention(cf)
+		dnn = Eyettention(cf)
 
 	#training
 	episode = 0
